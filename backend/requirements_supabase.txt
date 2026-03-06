@@ -1,0 +1,61 @@
+
+# Framework web
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Client Supabase
+supabase==1.0.4
+supabase-py==1.0.4
+
+# Authentification et sécurité
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+pyotp==2.9.0
+qrcode[pil]==7.4.2
+
+# Base de données
+sqlalchemy==2.0.23
+alembic==1.13.0
+psycopg2-binary==2.9.9
+
+# Validation et sérialisation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# Traitement des documents
+PyPDF2==3.0.1
+pdf2image==1.16.3
+pytesseract==0.3.10
+python-magic==0.4.27
+Pillow==10.1.0
+opencv-python==4.8.1.78
+
+# Calcul et traitement des données
+numpy==1.26.2
+pandas==2.1.4
+openpyxl==3.1.2
+
+# HTTP et API
+httpx==0.25.2
+requests==2.31.0
+aiofiles==23.2.1
+
+# Envoi d'emails
+python-dotenv==1.0.0
+aiosmtplib==3.0.1
+jinja2==3.1.2
+
+# Logging et monitoring
+structlog==23.2.0
+python-json-logger==2.0.7
+
+# Tests
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2
+
+# Déploiement
+gunicorn==21.2.0
