@@ -4,8 +4,8 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 
 # Client Supabase
-supabase==1.0.4
-supabase-py==1.0.4
+supabase>=2.3.0
+# supabase-py and duplicate httpx removed
 
 # Authentification et sécurité
 python-jose[cryptography]==3.3.0
@@ -30,7 +30,7 @@ pdf2image==1.16.3
 pytesseract==0.3.10
 python-magic==0.4.27
 Pillow==10.1.0
-opencv-python==4.8.1.78
+opencv-python-headless>=4.8.0
 
 # Calcul et traitement des données
 numpy==1.26.2
@@ -38,7 +38,7 @@ pandas==2.1.4
 openpyxl==3.1.2
 
 # HTTP et API
-httpx>=0.24.0,<0.25.0
+httpx>=0.24.0
 requests==2.31.0
 aiofiles==23.2.1
 
