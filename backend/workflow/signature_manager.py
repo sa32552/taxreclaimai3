@@ -133,6 +133,22 @@ class DigitalSignature:
         signature_string = json.dumps(signature_data, sort_keys=True)
         return hashlib.sha256(signature_string.encode()).hexdigest()
 
+    @staticmethod
+    def hash_file(file_path: str) -> str:
+        """
+        Génère un hash SHA-256 d'un fichier réel.
+        Utilisé pour garantir l'intégrité du formulaire PDF final.
+        """
+        sha256_hash = hashlib.sha256()
+        try:
+            with open(file_path, "rb") as f:
+                # Lire par blocs pour gérer les fichiers volumineux
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            return sha256_hash.hexdigest()
+        except Exception as e:
+            return f"error_hashing_file: {str(e)}"
+
 class SignatureManager:
     """Gestionnaire de signatures numériques"""
 

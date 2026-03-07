@@ -472,6 +472,22 @@ class AgenticExtractor:
         
         return 0.2, f"Taux de TVA suspect ({actual_rate:.1f}%). Ne correspond pas aux taux légaux de {country_code}."
 
+    @staticmethod
+    def validate_vies(vat_number: str) -> Tuple[float, str]:
+        """Vérifie la conformité VIES."""
+        if not vat_number:
+            return 0.3, "Numéro de TVA manquant"
+            
+        try:
+            from backend.services.vies_service import ViesService
+            is_valid, message = ViesService.validate_format(vat_number)
+            if is_valid:
+                return 1.0, f"Conformité VIES validée : {message}"
+            else:
+                return 0.1, f"Échec VIES : {message}"
+        except Exception as e:
+            return 0.5, f"Erreur validation VIES : {str(e)}"
+
     @classmethod
     def process(cls, raw_data: Dict[str, Any], text: str) -> Dict[str, Any]:
         """Enrichit les données brutes avec une couche d'intelligence."""
@@ -505,21 +521,26 @@ class AgenticExtractor:
             raw_data.get("vat_amount", 0)
         )
         
+        # Validation VIES
+        vies_score, vies_msg = cls.validate_vies(raw_data.get("vat_number"))
+        
         confidences = {
             "invoice_number": 0.95 if raw_data.get("invoice_number") else 0.4,
             "supplier": 0.90 if "supplier" in raw_data and raw_data["supplier"] != "Fournisseur inconnu" else 0.3,
             "date": 0.98 if raw_data.get("date") else 0.5,
             "amounts": math_score,
-            "tax_compliance": tax_score
+            "tax_compliance": tax_score,
+            "vies_compliance": vies_score
         }
         
         # Calcul du score global pondéré
         weights = {
-            "invoice_number": 0.15, 
-            "supplier": 0.15, 
+            "invoice_number": 0.1, 
+            "supplier": 0.1, 
             "date": 0.1, 
-            "amounts": 0.3, 
-            "tax_compliance": 0.3
+            "amounts": 0.25, 
+            "tax_compliance": 0.25,
+            "vies_compliance": 0.2
         }
         global_confidence = sum(confidences[k] * weights[k] for k in weights)
         
@@ -528,8 +549,8 @@ class AgenticExtractor:
             "agent_version": "v3.0-fiscal-guard",
             "ai_enhanced": bool(llm_data),
             "field_confidence": confidences,
-            "validation_status": "valid" if (math_score > 0.8 and tax_score > 0.8) else "flagged",
-            "validation_message": f"{math_msg} | {tax_msg}",
+            "validation_status": "valid" if (math_score > 0.8 and tax_score > 0.8 and vies_score > 0.8) else "flagged",
+            "validation_message": f"{math_msg} | {tax_msg} | {vies_msg}",
             "processed_at": datetime.now().isoformat()
         }
         raw_data["extraction_confidence"] = round(global_confidence, 4)

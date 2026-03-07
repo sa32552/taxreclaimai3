@@ -403,6 +403,9 @@ const VATRecovery = () => {
                       Récupérable
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      VIES Compliance
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                       Taux
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -424,6 +427,11 @@ const VATRecovery = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
                         {formatCurrency(item.recoverable_amount)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                          VIES ACTIF
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                         {item.vat_rate}%

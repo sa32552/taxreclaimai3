@@ -117,6 +117,7 @@ class ValidationPipeline:
 
     def _init_default_rules(self) -> None:
         """Initialise les règles de validation par défaut"""
+        from backend.services.vies_service import ViesService
         # Règle 1: Vérification du numéro de facture
         self.add_rule(ValidationRule(
             rule_id="invoice_number_required",
@@ -222,6 +223,16 @@ class ValidationPipeline:
             description="Vérifie le format du numéro de TVA du fournisseur",
             severity=ValidationSeverity.INFO,
             validator=lambda data: self._validate_vat_number(data)
+        ))
+
+        # Règle 9: Vérification VIES (Conformité EU)
+        self.add_rule(ValidationRule(
+            rule_id="vies_compliance",
+            rule_name="Conformité VIES européenne",
+            description="Vérifie que le numéro de TVA est actif dans le système VIES",
+            severity=ValidationSeverity.ERROR,
+            validator=lambda data: self._validate_vies(data),
+            is_critical=False
         ))
 
     def _validate_date(self, data: Dict[str, Any]) -> ValidationResult:
@@ -388,6 +399,33 @@ class ValidationPipeline:
             message="Numéro de TVA du fournisseur valide",
             is_passed=True,
             details={"vat_number": vat_number}
+        )
+
+    def _validate_vies(self, data: Dict[str, Any]) -> ValidationResult:
+        """
+        Valide le numéro de TVA via VIES
+        """
+        from backend.services.vies_service import ViesService
+        
+        vat_number = data.get("vat_number") or data.get("supplier_vat_number")
+        if not vat_number:
+            return ValidationResult(
+                rule_id="vies_compliance",
+                rule_name="Conformité VIES européenne",
+                severity=ValidationSeverity.WARNING,
+                message="Numéro de TVA manquant pour vérification VIES",
+                is_passed=False
+            )
+            
+        is_valid, message = ViesService.validate_format(vat_number)
+        
+        return ValidationResult(
+            rule_id="vies_compliance",
+            rule_name="Conformité VIES européenne",
+            severity=ValidationSeverity.ERROR if not is_valid else ValidationSeverity.INFO,
+            message=f"VIES: {message}",
+            is_passed=is_valid,
+            details={"vat_number": vat_number, "vies_message": message}
         )
 
     def add_rule(self, rule: ValidationRule) -> None:

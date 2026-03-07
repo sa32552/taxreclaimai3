@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) DEFAULT 'user' NOT NULL CHECK (role IN ('admin', 'manager', 'user', 'viewer')),
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
     company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
+    is_verified BOOLEAN DEFAULT FALSE NOT NULL,
+    two_factor_enabled BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     last_login TIMESTAMP WITH TIME ZONE
@@ -55,6 +57,8 @@ CREATE TABLE IF NOT EXISTS vat_claims (
     status VARCHAR(20) DEFAULT 'draft' NOT NULL,
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     submitted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    is_locked BOOLEAN DEFAULT FALSE NOT NULL, -- Verrouillage légal anti-suppression
+    archived_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
@@ -75,9 +79,15 @@ CREATE TABLE IF NOT EXISTS invoices (
     vat_claim_id UUID REFERENCES vat_claims(id) ON DELETE SET NULL,
     extraction_confidence DECIMAL(3,2) DEFAULT 0.0,
     original_file_path TEXT,
+    is_locked BOOLEAN DEFAULT FALSE NOT NULL, -- Verrouillage légal
+    archived_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+-- Index unique pour la détection automatique des doublons
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_duplicate_check 
+ON invoices (company_id, supplier, invoice_number, total_amount);
 
 -- 6. Table des notifications (Dépend de users)
 CREATE TABLE IF NOT EXISTS notifications (
@@ -110,6 +120,30 @@ CREATE TABLE IF NOT EXISTS digital_signatures (
     signature_hash TEXT NOT NULL,
     signed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     metadata JSONB DEFAULT '{}'::jsonb
+);
+
+-- 9. Table des preuves de paiement (Bank Statements / Receipts)
+CREATE TABLE IF NOT EXISTS payment_proofs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    file_path TEXT NOT NULL,
+    payment_date TIMESTAMP WITH TIME ZONE,
+    amount DECIMAL(12,2) NOT NULL,
+    currency CHAR(3) DEFAULT 'EUR' NOT NULL,
+    reference TEXT, -- Numero de virement, libellé
+    supplier_name VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'unmatched' NOT NULL, -- unmatched, matched, partial
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- 10. Table de liaison Invoice <-> Payment Proof
+CREATE TABLE IF NOT EXISTS invoice_payments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    payment_proof_id UUID NOT NULL REFERENCES payment_proofs(id) ON DELETE CASCADE,
+    matched_amount DECIMAL(12,2) NOT NULL,
+    matching_confidence DECIMAL(3,2) DEFAULT 0.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
 -- 9. Table des audits logs

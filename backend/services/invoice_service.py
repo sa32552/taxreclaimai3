@@ -38,6 +38,27 @@ class InvoiceService:
         self.change_tracker = change_tracker or ChangeTracker()
         self.notification_engine = notification_engine or NotificationEngine()
 
+    def check_duplicates(self, invoice_data: Dict[str, Any]) -> List[Invoice]:
+        """
+        Recherche des doublons potentiels (même fournisseur, numero, montant, entreprise)
+        """
+        company_id = invoice_data.get("company_id")
+        supplier = invoice_data.get("supplier")
+        invoice_number = invoice_data.get("invoice_number")
+        total_amount = invoice_data.get("total_amount")
+        
+        if not all([company_id, supplier, invoice_number, total_amount]):
+            return []
+            
+        return self.invoice_repository.get_all(
+            company_id=company_id,
+            filters={
+                "supplier": supplier,
+                "invoice_number": invoice_number,
+                "total_amount": total_amount
+            }
+        )
+
     def create_invoice(
         self,
         invoice_data: Dict[str, Any],
@@ -70,6 +91,11 @@ class InvoiceService:
         if critical_errors:
             error_messages = [v.message for v in critical_errors]
             raise ValueError(f"Erreurs de validation: {', '.join(error_messages)}")
+
+        # Détection automatique des doublons
+        existing_invoices = self.check_duplicates(invoice_data)
+        if existing_invoices:
+            raise ValueError(f"DOUBLON DÉTECTÉ : La facture {invoice_data.get('invoice_number')} du fournisseur {invoice_data.get('supplier')} existe déjà pour un montant de {invoice_data.get('total_amount')} {invoice_data.get('currency')}.")
 
         # Créer la facture
         invoice = Invoice(
@@ -181,6 +207,10 @@ class InvoiceService:
         if not invoice:
             return None
 
+        # Vérifier si la facture est verrouillée (Archivage Légal)
+        if getattr(invoice, 'is_locked', False):
+            raise ValueError(f"CONFORMITÉ : Impossible de modifier la facture {invoice.invoice_number} car elle est verrouillée pour archivage fiscal (Période fermée).")
+
         # Valider les nouvelles données
         validation_results = self.validation_pipeline.validate(invoice_data)
 
@@ -271,6 +301,10 @@ class InvoiceService:
         invoice = self.get_invoice(invoice_id)
         if not invoice:
             return False
+
+        # Vérifier si la facture est verrouillée (Archivage Légal)
+        if getattr(invoice, 'is_locked', False):
+            raise ValueError(f"CRITIQUE : Toute suppression est interdite pour les documents archivés légalement (Facture {invoice.invoice_number}).")
 
         # Supprimer la facture
         deleted = self.invoice_repository.delete(invoice_id)
