@@ -11,9 +11,20 @@ from io import BytesIO
 import uuid
 from datetime import datetime
 import pandas as pd
+import requests
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
 from langdetect import detect as detect_lang_lib
 from langdetect import DetectorFactory
 DetectorFactory.seed = 0
+
+# Configuration AI (Open Source via API)
+# Modèles recommandés : Llama-3, Mixtral-8x7b
+AI_API_URL = os.getenv("AI_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+AI_API_KEY = os.getenv("AI_API_KEY", "") # À remplir par l'utilisateur
+AI_MODEL = os.getenv("AI_MODEL", "llama3-70b-8192")
 
 # Configuration des répertoires
 UPLOAD_DIR = Path("uploads")
@@ -373,16 +384,260 @@ def extract_invoice_data(file_path: str) -> Dict[str, Any]:
 
     return result
 
+class LLMExtractor:
+    """Utilise un modèle de langage (Open Source via API) pour extraire les données de façon intelligente."""
+    
+    @staticmethod
+    def extract(text: str) -> Dict[str, Any]:
+        if not AI_API_KEY:
+            return {}
+            
+        prompt = f"""
+        Tu es un expert en comptabilité internationale et extraction de factures.
+        Extraits les informations suivantes du texte de facture ci-dessous en JSON :
+        - invoice_number (string)
+        - date (format DD/MM/YYYY)
+        - supplier (nom de l'entreprise)
+        - country (code ISO 2 lettres, ex: FR, DE, US)
+        - vat_number (numéro de TVA intracommunautaire si présent)
+        - amount_ht (float)
+        - vat_amount (float)
+        - total_amount (float)
+        - currency (code 3 lettres, ex: EUR, USD)
+        
+        Texte de la facture:
+        {text[:4000]} # On limite pour le contexte
+        
+        Réponds UNIQUEMENT le JSON pur sans texte avant ou après.
+        """
+        
+        try:
+            response = requests.post(
+                AI_API_URL,
+                headers={"Authorization": f"Bearer {AI_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": AI_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+                return json.loads(content)
+        except Exception as e:
+            print(f"Erreur extraction LLM: {e}")
+        return {}
+
+class AgenticExtractor:
+    """
+    Simule un extracteur intelligent (Agentic) qui valide les données 
+    et calcule des scores de confiance par champ.
+    """
+    
+    @staticmethod
+    def validate_amounts(amount_ht, vat_amount, total_amount):
+        """Vérifie l'intégrité mathématique des montants."""
+        if amount_ht == 0 or total_amount == 0:
+            return 0.5, "Montants manquants"
+        
+        diff = abs((amount_ht + vat_amount) - total_amount)
+        if diff < 0.05:
+            return 1.0, "Validation mathématique parfaite"
+        elif diff < 1.0:
+            return 0.8, "Légère divergence mathématique (arrondi ?)"
+        else:
+            return 0.3, f"Incohérence majeure: HT({amount_ht}) + TVA({vat_amount}) != TOTAL({total_amount})"
+
+    @staticmethod
+    def validate_vat_rate(country_code: str, amount_ht: float, vat_amount: float) -> Tuple[float, str]:
+        """Vérifie si le taux de TVA extrait correspond aux règles du pays."""
+        if amount_ht <= 0 or vat_amount <= 0:
+            return 0.5, "Données insuffisantes pour valider le taux"
+            
+        from vat_rules import VAT_RULES
+        rules = VAT_RULES.get(country_code)
+        if not rules:
+            return 0.7, f"Pays {country_code} non listé, validation générique"
+            
+        actual_rate = (vat_amount / amount_ht) * 100
+        rates = rules.get('vat_rates', {}).values()
+        
+        # Vérifier si le taux correspond à un taux légal (marge de 0.5%)
+        for legal_rate in rates:
+            if abs(actual_rate - legal_rate) < 0.5:
+                return 1.0, f"Taux de TVA valide ({legal_rate}%)"
+        
+        return 0.2, f"Taux de TVA suspect ({actual_rate:.1f}%). Ne correspond pas aux taux légaux de {country_code}."
+
+    @classmethod
+    def process(cls, raw_data: Dict[str, Any], text: str) -> Dict[str, Any]:
+        """Enrichit les données brutes avec une couche d'intelligence."""
+        
+        # 1. Utiliser le LLM pour affiner/corriger les données OCR si la clé est présente
+        llm_data = LLMExtractor.extract(text)
+        if llm_data:
+            for key in ['invoice_number', 'supplier', 'vat_number']:
+                if llm_data.get(key):
+                    raw_data[key] = llm_data[key]
+            
+            if llm_data.get('total_amount', 0) > raw_data.get('total_amount', 0):
+                for key in ['amount_ht', 'vat_amount', 'total_amount']:
+                    if key in llm_data:
+                        raw_data[key] = llm_data[key]
+
+        # 2. Calcul de confiance multi-critères
+        country_code = raw_data.get("country", "FR")
+        
+        # Validation mathématique
+        math_score, math_msg = cls.validate_amounts(
+            raw_data.get("amount_ht", 0),
+            raw_data.get("vat_amount", 0),
+            raw_data.get("total_amount", 0)
+        )
+        
+        # Validation fiscale (Taux de TVA)
+        tax_score, tax_msg = cls.validate_vat_rate(
+            country_code,
+            raw_data.get("amount_ht", 0),
+            raw_data.get("vat_amount", 0)
+        )
+        
+        confidences = {
+            "invoice_number": 0.95 if raw_data.get("invoice_number") else 0.4,
+            "supplier": 0.90 if "supplier" in raw_data and raw_data["supplier"] != "Fournisseur inconnu" else 0.3,
+            "date": 0.98 if raw_data.get("date") else 0.5,
+            "amounts": math_score,
+            "tax_compliance": tax_score
+        }
+        
+        # Calcul du score global pondéré
+        weights = {
+            "invoice_number": 0.15, 
+            "supplier": 0.15, 
+            "date": 0.1, 
+            "amounts": 0.3, 
+            "tax_compliance": 0.3
+        }
+        global_confidence = sum(confidences[k] * weights[k] for k in weights)
+        
+        # Ajout des métadonnées enrichies
+        raw_data["extraction_metadata"] = {
+            "agent_version": "v3.0-fiscal-guard",
+            "ai_enhanced": bool(llm_data),
+            "field_confidence": confidences,
+            "validation_status": "valid" if (math_score > 0.8 and tax_score > 0.8) else "flagged",
+            "validation_message": f"{math_msg} | {tax_msg}",
+            "processed_at": datetime.now().isoformat()
+        }
+        raw_data["extraction_confidence"] = round(global_confidence, 4)
+        
+        # Suggestion d'action "Intelligente"
+        if tax_score < 0.3:
+            raw_data["suggested_action"] = "INTELLIGENT_REJECT"
+            raw_data["rejection_reason"] = "FRAUDE_TVA_PROBABLE (Taux invalide)"
+        elif global_confidence > 0.9 and math_score > 0.9 and tax_score > 0.9:
+            raw_data["suggested_action"] = "AUTO_APPROVE"
+        elif global_confidence < 0.6:
+            raw_data["suggested_action"] = "MANUAL_REVIEW"
+        else:
+            raw_data["suggested_action"] = "VERIFY_DATA"
+            
+        return raw_data
+
+def extract_invoice_data(file_path: str) -> Dict[str, Any]:
+    """
+    Extrait les données d'une facture à partir d'un fichier PDF ou image
+    """
+    file_ext = os.path.splitext(file_path)[1].lower()
+
+    # Extraire le texte selon le type de fichier
+    if file_ext == '.pdf':
+        text = extract_text_from_pdf(file_path)
+    elif file_ext in ['.jpg', '.jpeg', '.png']:
+        text = extract_text_from_image(file_path)
+    else:
+        return {
+            "error": "Format de fichier non supporté",
+            "file_path": file_path
+        }
+
+    if not text:
+        return {
+            "error": "Impossible d'extraire le texte du fichier",
+            "file_path": file_path
+        }
+
+    # Détecter la langue, le pays et la devise
+    language = detect_language(text)
+    country = detect_country(text)
+    currency = detect_currency(text)
+
+    # Extraire les données avec les regex
+    invoice_number = extract_data_with_regex(text, 'invoice_number')
+    date = extract_data_with_regex(text, 'date')
+    vat_number = extract_data_with_regex(text, 'vat_number')
+    supplier = extract_data_with_regex(text, 'supplier')
+
+    # Extraire les montants
+    total_amount_str = extract_data_with_regex(text, 'amount')
+    vat_amount_str = extract_data_with_regex(text, 'vat_amount')
+    ht_amount_str = extract_data_with_regex(text, 'ht_amount')
+
+    # Nettoyer et convertir les montants en nombres
+    def parse_amount(amt_str):
+        if not amt_str: return 0.0
+        clean = re.sub(r'[^\d,.]', '', amt_str)
+        if ',' in clean and '.' in clean:
+            if clean.find(',') > clean.find('.'):
+                clean = clean.replace('.', '').replace(',', '.')
+            else:
+                clean = clean.replace(',', '')
+        elif ',' in clean:
+            if len(clean.split(',')[1]) == 2:
+                clean = clean.replace(',', '.')
+            else:
+                clean = clean.replace(',', '')
+        try:
+            return float(clean)
+        except:
+            return 0.0
+
+    total_amount = parse_amount(total_amount_str)
+    vat_amount = parse_amount(vat_amount_str)
+    ht_amount = parse_amount(ht_amount_str)
+
+    # Calculer le montant manquant si nécessaire
+    if total_amount > 0 and ht_amount == 0 and vat_amount > 0:
+        ht_amount = total_amount - vat_amount
+    elif total_amount > 0 and vat_amount == 0 and ht_amount > 0:
+        vat_amount = total_amount - ht_amount
+    elif total_amount == 0 and ht_amount > 0 and vat_amount > 0:
+        total_amount = ht_amount + vat_amount
+
+    # Créer le résultat brut
+    raw_result = {
+        "file_name": os.path.basename(file_path),
+        "invoice_number": invoice_number or f"INV-{uuid.uuid4().hex[:8].upper()}",
+        "date": date or datetime.now().strftime("%d/%m/%Y"),
+        "supplier": supplier or "Fournisseur inconnu",
+        "country": country,
+        "vat_number": vat_number or "",
+        "amount_ht": round(ht_amount, 2),
+        "vat_amount": round(vat_amount, 2),
+        "total_amount": round(total_amount, 2),
+        "currency": currency,
+        "language": language
+    }
+
+    # Passer par la couche Agentic pour enrichissement et validation
+    return AgenticExtractor.process(raw_result, text)
+
 def process_batch_invoices(file_paths: List[str], batch_id: str) -> Dict[str, Any]:
     """
     Traite un lot de factures et extrait les données de chacune
-
-    Args:
-        file_paths: Liste des chemins vers les fichiers de factures
-        batch_id: ID unique du lot
-
-    Returns:
-        Dictionnaire contenant les résultats du traitement
     """
     start_time = datetime.now()
     results = {
@@ -411,9 +666,9 @@ def process_batch_invoices(file_paths: List[str], batch_id: str) -> Dict[str, An
                 invoice_data["status"] = "processed"
 
                 # Mettre à jour les totaux
-                total_ht += invoice_data["amount_ht"]
-                total_vat += invoice_data["vat_amount"]
-                total_amount += invoice_data["total_amount"]
+                total_ht += invoice_data.get("amount_ht", 0)
+                total_vat += invoice_data.get("vat_amount", 0)
+                total_amount += invoice_data.get("total_amount", 0)
 
             results["invoices"].append(invoice_data)
         except Exception as e:
@@ -427,7 +682,6 @@ def process_batch_invoices(file_paths: List[str], batch_id: str) -> Dict[str, An
     end_time = datetime.now()
     processing_time = (end_time - start_time).total_seconds()
 
-    # Créer le résumé
     results["summary"] = {
         "processing_time_seconds": round(processing_time, 2),
         "processing_time_formatted": f"{int(processing_time // 60)}m{int(processing_time % 60)}s",
@@ -438,36 +692,4 @@ def process_batch_invoices(file_paths: List[str], batch_id: str) -> Dict[str, An
         "end_time": end_time.isoformat()
     }
 
-    # Sauvegarder les résultats dans un fichier CSV
-    if results["invoices"]:
-        df = pd.DataFrame([inv for inv in results["invoices"] if "error" not in inv])
-        if not df.empty:
-            csv_path = PROCESSED_DIR / f"{batch_id}_invoices.csv"
-            df.to_csv(csv_path, index=False)
-
     return results
-
-def get_invoice_by_id(batch_id: str, invoice_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Récupère une facture spécifique par son ID
-
-    Args:
-        batch_id: ID du lot
-        invoice_id: ID de la facture
-
-    Returns:
-        Données de la facture ou None si non trouvée
-    """
-    results_file = PROCESSED_DIR / f"{batch_id}_results.json"
-
-    if not results_file.exists():
-        return None
-
-    with open(results_file, 'r') as f:
-        results = json.load(f)
-
-    for invoice in results.get("invoices", []):
-        if invoice.get("invoice_number") == invoice_id:
-            return invoice
-
-    return None

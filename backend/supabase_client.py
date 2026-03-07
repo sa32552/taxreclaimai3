@@ -8,8 +8,8 @@ import os
 from typing import Optional
 
 # Configuration Supabase
-SUPABASE_URL = "https://nevyttqdnanrmxsjozjd.supabase.co"
-SUPABASE_KEY = "sb_publishable_XQugS3Pj77HcKIX-qelwZQ_k7vp7JhJ"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nevyttqdnanrmxsjozjd.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", os.getenv("SUPABASE_KEY", "sb_publishable_XQugS3Pj77HcKIX-qelwZQ_k7vp7JhJ"))
 
 # Créer le client Supabase
 supabase: Client = create_client(

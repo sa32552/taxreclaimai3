@@ -11,6 +11,10 @@ from datetime import datetime
 import json
 import aiofiles
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
 
 # Import des modules personnalisés
 from pdf_processor import extract_invoice_data, process_batch_invoices

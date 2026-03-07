@@ -7,11 +7,12 @@ import {
   FileText, 
   Menu,
   X,
-  User,
   LogOut,
-  Settings
+  Settings,
+  Shield
 } from 'lucide-react';
 import { supabase } from '../supabase';
+import NotificationBell from './NotificationBell';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -51,6 +52,7 @@ const Layout = ({ children }: LayoutProps) => {
     { name: 'Factures', href: '/upload', icon: UploadCloud },
     { name: 'Récupération TVA', href: '/vat-recovery', icon: Calculator },
     { name: 'Formulaires', href: '/forms', icon: FileText },
+    { name: 'Audit & Sécurité', href: '/audit-logs', icon: Shield },
   ];
 
   return (
@@ -165,7 +167,43 @@ const Layout = ({ children }: LayoutProps) => {
       </div>
 
       <div className="lg:pl-64">
-        <main className="p-6">
+        {/* Top Header Desktop */}
+        <header className="hidden lg:flex h-16 bg-white border-b border-slate-200 items-center justify-between px-8 sticky top-0 z-10 shadow-sm/50">
+          <div className="flex items-center gap-4 text-slate-500 text-sm">
+            <span className="font-medium text-slate-900 capitalize">
+              {location.pathname.replace('/', '').replace('-', ' ') || 'Dashboard'}
+            </span>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs text-slate-400">Entreprise: {user?.user_metadata?.company_name || 'Vérification...'}</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="h-4 w-px bg-slate-200" />
+            <NotificationBell />
+            <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+              <div className="text-right">
+                <p className="text-xs font-bold text-slate-900">{user?.email?.split('@')[0]}</p>
+                <p className="text-[10px] text-primary-600 font-medium tracking-wider uppercase">Compte Expert</p>
+              </div>
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-primary-200">
+                {user?.email?.charAt(0).toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Top Header Mobile */}
+        <header className="lg:hidden flex h-16 bg-white border-b border-slate-200 items-center justify-between px-4 sticky top-0 z-10">
+          <button 
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-colors"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+          <span className="text-lg font-bold text-primary-600">TAXRECLAIMAI</span>
+          <NotificationBell />
+        </header>
+
+        <main className="p-4 lg:p-8 max-w-[1400px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500">
           {children}
         </main>
       </div>

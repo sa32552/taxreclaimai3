@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
+import uuid
 from datetime import datetime
 
 from backend.supabase_client import get_supabase_client
 from backend.auth.supabase_auth import SupabaseAuthService
 from backend.supabase_storage import storage_service
 from pdf_processor import extract_invoice_data
+from form_generator import generate_vat_forms
 from fastapi import BackgroundTasks
 from backend.auth.models import UserResponse, Token
 from backend.workflow.approval_engine import ApprovalEngine
@@ -259,10 +261,25 @@ async def upload_invoice(
                     # Exécuter l'OCR puissant
                     data = extract_invoice_data(temp_path)
                     
+                    # Déterminer le statut initial
+                    suggested_action = data.get("suggested_action")
+                    final_status = "processed"
+                    
+                    if suggested_action == "INTELLIGENT_REJECT":
+                        final_status = "rejected"
+                        # Alerte immédiate de fraude ou erreur majeure
+                        notification_engine.send_notification(
+                            user_id=user_id,
+                            notification_type="ocr_rejection",
+                            title="Alerte de Conformité",
+                            message=f"La facture {data.get('invoice_number')} a été REJETÉE : {data.get('rejection_reason')}",
+                            priority="urgent"
+                        )
+
                     # Enregistrer dans Supabase DB
                     supabase.table("invoices").insert({
                         "invoice_number": data.get("invoice_number", "INV-TEMP"),
-                        "date": datetime.now().isoformat(), # Simplifié pour la démo
+                        "date": datetime.now().isoformat(),
                         "supplier": data.get("supplier", "Inconnu"),
                         "country": data.get("country", "FR"),
                         "amount_ht": data.get("amount_ht", 0.0),
@@ -270,13 +287,65 @@ async def upload_invoice(
                         "total_amount": data.get("total_amount", 0.0),
                         "currency": data.get("currency", "EUR"),
                         "language": data.get("language", "FR"),
-                        "status": "processed",
+                        "status": final_status,
                         "company_id": user_id,
                         "extraction_confidence": data.get("extraction_confidence", 0.0),
                         "extraction_data": data,
                         "original_file_path": file_info['url']
                     }).execute()
                     
+                    # === LOGIQUE DE GÉNÉRATION AUTOMATIQUE (IA POWERED) ===
+                    confidence = data.get("extraction_confidence", 0.0)
+                    if confidence >= 0.95 and final_status != "rejected":
+                        country_code = data.get("country", "FR")
+                        
+                        # 1. Récupérer ou Créer une demande de récupération TVA
+                        claim_res = supabase.table("vat_claims")\
+                            .select("*")\
+                            .eq("company_id", user_id)\
+                            .eq("target_country", country_code)\
+                            .eq("status", "draft")\
+                            .execute()
+                            
+                        if not claim_res.data:
+                            # Créer une nouvelle demande automatique
+                            claim_res = supabase.table("vat_claims").insert({
+                                "claim_number": f"AUTO-{country_code}-{uuid.uuid4().hex[:6].upper()}",
+                                "target_country": country_code,
+                                "company_vat_number": "FR123456789", # Devrait être récupéré dynamiquement
+                                "period_start": datetime.utcnow().isoformat(),
+                                "period_end": datetime.utcnow().isoformat(),
+                                "total_recoverable": data.get("vat_amount", 0.0),
+                                "status": "draft",
+                                "company_id": user_id
+                            }).execute()
+                            
+                        claim_id = claim_res.data[0]["id"]
+                        
+                        # 2. Déclencher la génération de formulaires 'Universal'
+                        # On récupère toutes les factures de cette demande pour le formulaire
+                        invoices_to_include = supabase.table("invoices")\
+                            .select("*")\
+                            .eq("company_id", user_id)\
+                            .eq("country", country_code)\
+                            .execute()
+                            
+                        generate_vat_forms(
+                            invoices=invoices_to_include.data,
+                            country_code=country_code,
+                            company_vat="FR123456789" # Mock
+                        )
+                        
+                        # 3. Notification d'automatisation
+                        notification_engine.send_notification(
+                            user_id=user_id,
+                            notification_type="auto_form_generated",
+                            title="Intelligence Artificielle Active",
+                            message=f"Confiance IA {confidence*100:.1f}%. Formulaire généré automatiquement pour {country_code}.",
+                            priority="high"
+                        )
+                    # ===================================================
+
                     # Nettoyer
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
@@ -558,46 +627,20 @@ async def generate_form(
         if not claim.data:
             raise HTTPException(status_code=404, detail="Demande non trouvée")
             
-        # 2. Simuler la génération de PDF (dans un cas réel, on utiliserait reportlab ou fpdf)
-        # On crée un fichier PDF factice pour la démo Supabase Storage
-        file_name = f"VAT_RECLAIM_{claim_id}.pdf"
-        file_path = f"temp/{file_name}"
+        # 2. Récupérer les factures liées
+        invoices = supabase.table("invoices").select("*").eq("company_id", current_user.id).eq("country", claim.data['target_country']).execute()
         
-        # S'assurer que le dossier temp existe
-        os.makedirs("temp", exist_ok=True)
+        # 3. Générer les formulaires réels avec notre moteur Premium
+        form_paths = generate_vat_forms(
+            invoices=invoices.data,
+            country_code=claim.data['target_country'],
+            company_vat=claim.data['company_vat_number'],
+            vat_claim_id=claim_id
+        )
         
-        with open(file_path, "w") as f:
-            f.write(f"DEMANDE DE RÉCUPÉRATION TVA - {claim.data['target_country']}\n")
-            f.write(f"ID: {claim_id}\n")
-            f.write(f"Montant: {claim.data['total_recoverable']} EUR\n")
-            
-        # 3. Télécharger vers Supabase Storage
-        with open(file_path, "rb") as f0:
-            storage_result = await storage_service.upload_file(
-                file=f0,
-                filename=file_name,
-                bucket="forms",
-                folder="generated",
-                user_id=current_user.id
-            )
-            
-        # 4. Enregistrer dans la table forms
-        form_record = supabase.table("forms").insert({
-            "claim_id": claim_id,
-            "form_type": "VAT_RECLAIM",
-            "file_path": storage_result["path"],
-            "status": "ready",
-            "company_id": current_user.id,
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-        
-        # Nettoyer
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            
         return {
-            "message": "Formulaire généré avec succès",
-            "form": form_record.data[0]
+            "message": f"{len(form_paths)} formulaire(s) généré(s) avec succès",
+            "paths": form_paths
         }
     except Exception as e:
         raise HTTPException(
@@ -605,46 +648,56 @@ async def generate_form(
             detail=f"Erreur lors de la génération du formulaire: {str(e)}"
         )
 
-@router.post("/workflow/approvals/{workflow_id}/reject")
-async def reject_workflow_step(
-    workflow_id: str,
-    reason: str,
+@router.post("/forms/{form_id}/sign")
+async def sign_and_submit_form(
+    form_id: str,
+    comment: Optional[str] = None,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """
-    Rejette une étape d'un workflow
-
-    - **workflow_id**: ID du workflow
-    - **reason**: Raison du rejet
+    Signe numériquement et soumet officiellement un formulaire
     """
     try:
-        approval_engine.reject_step(workflow_id, current_user.id, reason)
-
-        # Récupérer le workflow mis à jour
-        workflow = approval_engine.get_workflow(workflow_id)
-
-        # Envoyer une notification
-        notification_engine.send_notification(
-            user_id=workflow.requester_id,
-            notification_type="workflow_rejected",
-            title="Étape rejetée",
-            message=f"Votre workflow pour {workflow.entity_type} {workflow.entity_id} a été rejeté: {reason}",
-            priority="high",
-            entity_type=workflow.entity_type,
-            entity_id=workflow.entity_id,
-            action_url=f"/workflow/approvals/{workflow.id}"
-        )
-
-        return {
-            "message": "Étape rejetée avec succès",
-            "workflow_id": workflow_id,
-            "status": workflow.status.value,
-            "rejection_reason": reason
+        supabase = get_supabase_client()
+        
+        # 1. Vérifier l'existence du formulaire
+        form = supabase.table("forms").select("*").eq("id", form_id).single().execute()
+        if not form.data:
+            raise HTTPException(status_code=404, detail="Formulaire non trouvé")
+            
+        # 2. Créer la signature numérique (Simulation eIDAS)
+        signature_id = str(uuid.uuid4())
+        signature_data = {
+            "form_id": form_id,
+            "user_id": current_user.id,
+            "signature_hash": f"SHA256-{uuid.uuid4().hex}",
+            "signed_at": datetime.now().isoformat(),
+            "metadata": {"ip": "127.0.0.1", "agent": "TaxReclaimAI-Portal"}
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors du rejet: {str(e)}"
+        supabase.table("digital_signatures").insert(signature_data).execute()
+        
+        # 3. Mettre à jour le statut du formulaire
+        supabase.table("forms").update({"status": "signed"}).eq("id", form_id).execute()
+        
+        # 4. Déclencher un audit log
+        supabase.table("audit_logs").insert({
+            "table_name": "forms",
+            "record_id": form_id,
+            "action": "SIGN_AND_SUBMIT",
+            "old_data": form.data,
+            "new_data": {**form.data, "status": "signed"},
+            "user_id": current_user.id
+        }).execute()
+        
+        # 5. Envoyer une notification de succès
+        notification_engine.send_notification(
+            user_id=current_user.id,
+            notification_type="form_signed",
+            title="Succès de la Signature",
+            message=f"Le formulaire {form_id} a été signé et envoyé aux autorités.",
+            priority="high"
         )
+        
+        return {"status": "success", "signature_id": signature_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

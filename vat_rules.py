@@ -8,9 +8,16 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-# Répertoire de stockage des données
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configuration AI
+AI_API_URL = os.getenv("AI_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
 
 # Règles TVA par pays (échantillon représentatif pour les principaux pays)
 VAT_RULES = {
@@ -785,6 +792,42 @@ def match_vat_recovery_rules(
         'vat_rules_applied': vat_rules
     }
 
+
+def get_ai_tax_advice(country_code: str, invoices: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Utilise l'IA pour obtenir des conseils fiscaux sur un pays spécifique."""
+    if not AI_API_KEY:
+        return {"error": "IA non configurée"}
+        
+    prompt = f"""
+    En tant qu'expert en fiscalité internationale (TVA/VAT), analyse la possibilité de récupération de TVA 
+    pour le pays suivant : {country_code}.
+    Données des factures : {json.dumps(invoices[:5])}
+    
+    Réponds en JSON avec :
+    - eligibility (boolean)
+    - standard_rate (float)
+    - deadline_months (int)
+    - warning (string)
+    - steps (list of strings)
+    """
+    
+    try:
+        response = requests.post(
+            AI_API_URL,
+            headers={"Authorization": f"Bearer {AI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": AI_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            },
+            timeout=15
+        )
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        print(f"Erreur IA Tax Advice: {e}")
+    return {"error": "Analyse IA échouée"}
 
 def calculate_vat_recovery_potential(
     invoices: List[Dict[str, Any]], 

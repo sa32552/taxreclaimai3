@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import VATRecovery from './pages/VATRecovery';
 import Forms from './pages/Forms';
+import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
 import './index.css';
 
@@ -20,6 +21,7 @@ function App() {
             <Route path="/upload" element={<Upload />} />
             <Route path="/vat-recovery" element={<VATRecovery />} />
             <Route path="/forms" element={<Forms />} />
+            <Route path="/audit-logs" element={<AuditLogs />} />
           </Routes>
         </Layout>
       </AuthGuard>
