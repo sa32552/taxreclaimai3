@@ -1,0 +1,3 @@
+SUPABASE_URL=https://nevyttqdnanrmxsjozjd.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_XQugS3Pj77HcKIX-qelwZQ_k7vp7JhJ
+JWT_SECRET=zNOqJLmCL4GQjaxSsjw+2T9FBkrGV17GGyfiHm6YN53o1sLaqfAghUs9+QIL70HjjfLo4T81KBgvDakxbBkYDg==
