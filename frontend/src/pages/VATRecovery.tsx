@@ -5,7 +5,8 @@ import {
   CheckCircle, 
   AlertCircle,
   Globe,
-  DollarSign
+  DollarSign,
+  TrendingUp
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -123,31 +124,28 @@ const VATRecovery = () => {
     { code: 'IT', name: 'Italie' },
     { code: 'ES', name: 'Espagne' },
     { code: 'GB', name: 'Royaume-Uni' },
-    { code: 'NL', name: 'Pays-Bas' },
+    { code: 'US', name: 'États-Unis' },
+    { code: 'CN', name: 'Chine' },
+    { code: 'JP', name: 'Japon' },
+    { code: 'KR', name: 'Corée du Sud' },
+    { code: 'IN', name: 'Inde' },
+    { code: 'BR', name: 'Brésil' },
+    { code: 'MX', name: 'Mexique' },
+    { code: 'AE', name: 'Émirats arabes unis' },
+    { code: 'SA', name: 'Arabie Saoudite' },
+    { code: 'SG', name: 'Singapour' },
+    { code: 'ZA', name: 'Afrique du Sud' },
+    { code: 'AU', name: 'Australie' },
+    { code: 'CA', name: 'Canada' },
     { code: 'BE', name: 'Belgique' },
+    { code: 'NL', name: 'Pays-Bas' },
     { code: 'AT', name: 'Autriche' },
     { code: 'CH', name: 'Suisse' },
-    { code: 'PL', name: 'Pologne' },
+    { code: 'PT', name: 'Portugal' },
     { code: 'SE', name: 'Suède' },
     { code: 'DK', name: 'Danemark' },
     { code: 'FI', name: 'Finlande' },
-    { code: 'NO', name: 'Norvège' },
-    { code: 'PT', name: 'Portugal' },
-    { code: 'GR', name: 'Grèce' },
-    { code: 'IE', name: 'Irlande' },
-    { code: 'LU', name: 'Luxembourg' },
-    { code: 'CZ', name: 'République tchèque' },
-    { code: 'HU', name: 'Hongrie' },
-    { code: 'RO', name: 'Roumanie' },
-    { code: 'BG', name: 'Bulgarie' },
-    { code: 'HR', name: 'Croatie' },
-    { code: 'SI', name: 'Slovénie' },
-    { code: 'SK', name: 'Slovaquie' },
-    { code: 'EE', name: 'Estonie' },
-    { code: 'LV', name: 'Lettonie' },
-    { code: 'LT', name: 'Lituanie' },
-    { code: 'CY', name: 'Chypre' },
-    { code: 'MT', name: 'Malte' }
+    { code: 'NO', name: 'Norvège' }
   ];
 
   return (

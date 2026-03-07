@@ -7,18 +7,22 @@ import Forms from './pages/Forms';
 import Layout from './components/Layout';
 import './index.css';
 
+import { AuthGuard } from './components/AuthGuard';
+
 function App() {
   return (
     <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/upload" element={<Upload />} />
-          <Route path="/vat-recovery" element={<VATRecovery />} />
-          <Route path="/forms" element={<Forms />} />
-        </Routes>
-      </Layout>
+      <AuthGuard>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/upload" element={<Upload />} />
+            <Route path="/vat-recovery" element={<VATRecovery />} />
+            <Route path="/forms" element={<Forms />} />
+          </Routes>
+        </Layout>
+      </AuthGuard>
     </Router>
   );
 }

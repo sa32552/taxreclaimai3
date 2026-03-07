@@ -65,14 +65,18 @@ const Upload = () => {
     setUploading(true);
 
     try {
+      // Obtenir le token de session Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const formData = new FormData();
       files.forEach(fileUpload => {
         formData.append('files', fileUpload.file);
       });
 
-      const response = await axios.post('/api/upload_factures', formData, {
+      const response = await axios.post('/api/invoices/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${session?.access_token}`
         },
         onUploadProgress: (progressEvent) => {
           const progress = progressEvent.total
@@ -87,15 +91,13 @@ const Upload = () => {
         },
       });
 
-      // Simuler le traitement complet
       setFiles(prev => prev.map(file => ({
         ...file,
         status: 'success',
         progress: 100
       })));
 
-      // Afficher un message de succès
-      alert(`${response.data.message}\n\nID du lot: ${response.data.batch_id}\nStatut: ${response.data.status}`);
+      alert(`Traitement lancé avec succès !\nID du lot: ${response.data.batch_id}\nVos factures apparaîtront sur le dashboard une fois l'OCR terminé.`);
     } catch (error) {
       console.error('Upload error:', error);
       setFiles(prev => prev.map(file => ({

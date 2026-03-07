@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
+import { supabase } from '../supabase';
+
 interface FormInfo {
   country_code: string;
   country_name: string;
@@ -27,51 +29,26 @@ const Forms = () => {
   const [selectedForms, setSelectedForms] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    // Charger les formulaires disponibles
     const loadForms = async () => {
       try {
-        // Simuler un appel API pour récupérer les formulaires disponibles
-        const mockForms: FormInfo[] = [
-          {
-            country_code: 'FR',
-            country_name: 'France',
-            form_type: 'CA3',
-            form_name: 'Déclaration de TVA',
-            invoice_count: 42,
-            total_amount: 45000,
-            status: 'ready'
-          },
-          {
-            country_code: 'DE',
-            country_name: 'Allemagne',
-            form_type: 'USt1V',
-            form_name: 'Déclaration de TVA intracommunautaire',
-            invoice_count: 31,
-            total_amount: 32000,
-            status: 'ready'
-          },
-          {
-            country_code: 'ES',
-            country_name: 'Espagne',
-            form_type: '303',
-            form_name: 'Déclaration de TVA',
-            invoice_count: 28,
-            total_amount: 28000,
-            status: 'ready'
-          },
-          {
-            country_code: 'IT',
-            country_name: 'Italie',
-            form_type: 'VA',
-            form_name: 'Déclaration de TVA',
-            invoice_count: 19,
-            total_amount: 20000,
-            status: 'ready'
-          }
-        ];
-        setForms(mockForms);
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await axios.get('/api/forms', {
+          headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        
+        const mappedForms: FormInfo[] = response.data.map((f: any) => ({
+          country_code: f.target_country || 'FR',
+          country_name: f.target_country || 'France',
+          form_type: f.form_type,
+          form_name: `VAT Return ${f.form_type}`,
+          invoice_count: 0,
+          total_amount: f.total_amount || 0,
+          status: f.status
+        }));
+        
+        setForms(mappedForms);
       } catch (err) {
-        setError('Erreur lors du chargement des formulaires');
+        setError('Erreur lors du chargement des formulaires Supabase');
         console.error('Error loading forms:', err);
       }
     };
@@ -92,7 +69,7 @@ const Forms = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedForms.size === forms.length) {
+    if (selectedForms.size === forms.length && forms.length > 0) {
       setSelectedForms(new Set());
     } else {
       setSelectedForms(new Set(forms.map(f => f.form_type)));
@@ -109,21 +86,22 @@ const Forms = () => {
     setError(null);
 
     try {
-      // Simuler un appel API pour générer les formulaires
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const { data: claims } = await supabase.from('vat_claims').select('id').limit(1);
+      
+      if (!claims || claims.length === 0) {
+        throw new Error("Aucune demande de récupération TVA trouvée. Créez-en une d'abord.");
+      }
 
-      // Mettre à jour le statut des formulaires
-      setForms(prev => prev.map(form => 
-        selectedForms.has(form.form_type)
-          ? { ...form, status: 'ready' }
-          : form
-      ));
+      await axios.post(`/api/forms/generate?claim_id=${claims[0].id}`, {}, {
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
 
-      // Simuler le téléchargement
-      alert('Formulaires générés avec succès! Téléchargement en cours...');
-    } catch (err) {
-      setError('Erreur lors de la génération des formulaires');
-      console.error('Error generating forms:', err);
+      alert('Formulaire généré avec succès dans Supabase Storage !');
+      window.location.reload();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la génération des formulaires');
     } finally {
       setLoading(false);
     }

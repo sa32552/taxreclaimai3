@@ -1,0 +1,41 @@
+
+version: "3.8"
+
+services:
+  api:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./uploads:/app/uploads
+      - ./processed:/app/processed
+      - ./forms:/app/forms
+      - ./temp:/app/temp
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./taxreclaim.db
+      - SECRET_KEY=your-secret-key-change-in-production
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Service de base de données (optionnel pour SQLite)
+  # db:
+  #   image: postgres:14-alpine
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   environment:
+  #     - POSTGRES_USER=taxreclaim
+  #     - POSTGRES_PASSWORD=taxreclaim_password
+  #     - POSTGRES_DB=taxreclaim
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:

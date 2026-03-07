@@ -1,0 +1,75 @@
+
+version: "3.8"
+
+services:
+  api:
+    build: .
+    command: uvicorn main_supabase:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./uploads:/app/uploads
+      - ./processed:/app/processed
+      - ./forms:/app/forms
+      - ./temp:/app/temp
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - SECRET_KEY=votre-secret-key-a-changer-en-production
+      - ENVIRONMENT=production
+      - JWT_SECRET_KEY=votre-secret-jwt-a-changer
+      - JWT_ALGORITHM=HS256
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
+      - MAX_LOGIN_ATTEMPTS=5
+      - LOCKOUT_DURATION_MINUTES=30
+      - MAX_FAILED_ATTEMPTS=5
+      - 2FA_ISSUER_NAME=TAXRECLAIMAI
+      - 2FA_DIGITS=6
+      - 2FA_BACKUP_CODES_COUNT=10
+      - SUPABASE_URL=https://nevyttqdnanrmxsjozjd.supabase.co
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmNlZSI6ImV4ZXJzIjoidXVwdWUiOiJodHRwOiJub25jZyIsImVhbGciOiJSUzIjoidXVwdWUiOiJodHRwOiJub25jZyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmNlZSI6ImV4ZXJzIjoidXVwdWUiOiJodHRwOiJub25jZyIsImVhbGciOiJSUzIjoidXVwdWUiOiJodHRwOiJub25jZyIsInR5cCI
+      - SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmNlZSI6ImV4ZXJzIjoidXVwdWUiOiJodHRwOiJub25jZyIsImVhbGciOiJSUzIjoidXVwdWUiOiJodHRwOiJub25jZyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmNlZSI6ImV4ZXJzIjoidXVwdWUiOiJodHRwOiJub25jZyIsImVhbGciOiJSUzIjoidXVwdWUiOiJodHRwOiJub25jZyIsInR5cCI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 2
+        delay: 10s
+        order: start-first
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      - db
+
+  # Service de base de données PostgreSQL pour Supabase
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
