@@ -4,6 +4,7 @@
   "description": "Frontend React pour TAXRECLAIMAI",
   "private": true,
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.6.0",
     "clsx": "^2.0.0",
     "lucide-react": "^0.292.0",
